@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0–90 Counter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  #num {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+    font-size: 38vmin;
+    line-height: 1;
+    color: #ffd400;
+    -webkit-text-fill-color: #ffd400;
+    transition: text-shadow 0.4s ease, color 0.4s ease;
+  }
+  #years {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+    font-size: 8vmin;
+    line-height: 1;
+    color: #ffd400;
+    -webkit-text-fill-color: #ffd400;
+    letter-spacing: 0.1em;
+  }
+  #num.glow {
+    animation: glow 1.2s ease-in-out infinite alternate;
+  }
+  @keyframes glow {
+    from {
+      text-shadow:
+        0 0 8px #ff8a00,
+        0 0 20px #ff8a00,
+        0 0 40px #ff6a00;
+    }
+    to {
+      text-shadow:
+        0 0 16px #ff8a00,
+        0 0 44px #ff7a00,
+        0 0 90px #ff5a00,
+        0 0 130px #ff5a00;
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="num">0</div>
+  <div id="years">years</div>
+  <script>
+    const el = document.getElementById('num');
+    let n = 0;
+
+    function tick() {
+      el.textContent = n;
+      if (n >= 90) {
+        el.classList.add('glow');
+        setTimeout(() => {
+          el.classList.remove('glow');
+          n = 0;
+          tick();
+        }, 2200);
+        return;
+      }
+      n++;
+      setTimeout(tick, 68);
+    }
+    tick();
+  </script>
+</body>
+</html>
