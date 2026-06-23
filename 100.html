@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nepean School — 100 Years</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --square-size: 15px; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #000000;
+            color: #ffd700;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 30px;
+            overflow-x: hidden;
+        }
+        .screen { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 30px; width: 100%; }
+        .screen.active { display: flex; }
+
+        #welcome-text { font-size: 2rem; font-weight: 600; max-width: 800px; line-height: 1.5; }
+
+        .button {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #000000;
+            background-color: #ffd700;
+            border: none;
+            border-radius: 12px;
+            padding: 18px 40px;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+        }
+        .button:active { transform: scale(0.95); }
+
+        #instruction { font-size: 1.5rem; font-weight: 600; }
+
+        #main-container { display: flex; align-items: flex-end; justify-content: center; gap: 50px; flex-wrap: wrap; }
+        .grid-group { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        #red-grids-wrapper, #green-grids-wrapper { display: grid; grid-template-columns: repeat(3, auto); gap: 20px; }
+        #blue-grids-wrapper { display: flex; gap: 10px; }
+        .grid-container { display: grid; border: 1px solid #ffd700; }
+        .grid-10x10 { grid-template-columns: repeat(10, var(--square-size)); grid-template-rows: repeat(10, var(--square-size)); }
+        .grid-1x10 { grid-template-columns: var(--square-size); grid-template-rows: repeat(10, var(--square-size)); }
+        .grid-container, .square { transition: background-color 0.2s ease, transform 0.1s ease; }
+        .square {
+            width: var(--square-size);
+            height: var(--square-size);
+            border: 1px solid #ffd700;
+            background-color: #000000;
+            cursor: pointer;
+        }
+        .grid-10x10.red { transform: scale(1.05); }
+        .grid-10x10.red .square { background-color: #e74c3c; }
+        .grid-1x10.blue { transform: scale(1.05); }
+        .grid-1x10.blue .square { background-color: #3498db; }
+        .square.green { background-color: #2ecc71; transform: scale(1.05); }
+
+        #celebration-text { font-size: 2.4rem; font-weight: 700; max-width: 800px; line-height: 1.4; }
+
+        .confetti {
+            position: fixed;
+            top: -20px;
+            width: 12px;
+            height: 12px;
+            opacity: 0.9;
+            pointer-events: none;
+            animation: fall linear forwards;
+            z-index: 100;
+        }
+        @keyframes fall {
+            to { transform: translateY(105vh) rotate(720deg); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="welcome-screen" class="screen active">
+        <div id="welcome-text">Welcome, wanderer, Nepean School just turned 100 years old, to get the next clue represent the number 100</div>
+        <button id="begin-button" class="button">Click to begin</button>
+    </div>
+
+    <div id="grid-screen" class="screen">
+        <div id="instruction">Tap to make 100</div>
+        <div id="main-container">
+            <div class="grid-group"><div id="red-grids-wrapper"></div></div>
+            <div class="grid-group"><div id="blue-grids-wrapper"></div></div>
+            <div class="grid-group"><div id="green-grids-wrapper"></div></div>
+        </div>
+    </div>
+
+    <div id="win-screen" class="screen">
+        <div id="celebration-text">Well done! You did it!... Now to the bubbles</div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const welcomeScreen = document.getElementById('welcome-screen');
+            const gridScreen = document.getElementById('grid-screen');
+            const winScreen = document.getElementById('win-screen');
+            const beginButton = document.getElementById('begin-button');
+            const redWrapper = document.getElementById('red-grids-wrapper');
+            const blueWrapper = document.getElementById('blue-grids-wrapper');
+            const greenWrapper = document.getElementById('green-grids-wrapper');
+            let won = false;
+
+            for (let i = 0; i < 9; i++) {
+                const gridR = document.createElement('div'); gridR.classList.add('grid-container', 'grid-10x10');
+                for (let j = 0; j < 100; j++) { const s = document.createElement('div'); s.classList.add('square'); gridR.appendChild(s); }
+                redWrapper.appendChild(gridR);
+                const gridB = document.createElement('div'); gridB.classList.add('grid-container', 'grid-1x10');
+                for (let j = 0; j < 10; j++) { const s = document.createElement('div'); s.classList.add('square'); gridB.appendChild(s); }
+                blueWrapper.appendChild(gridB);
+                const gridG = document.createElement('div'); gridG.classList.add('square', 'grid-1x1');
+                greenWrapper.appendChild(gridG);
+            }
+
+            beginButton.addEventListener('click', () => {
+                welcomeScreen.classList.remove('active');
+                gridScreen.classList.add('active');
+            });
+
+            redWrapper.addEventListener('click', e => { if (won) return; e.target.closest('.grid-10x10')?.classList.toggle('red'); checkValue(); });
+            blueWrapper.addEventListener('click', e => { if (won) return; e.target.closest('.grid-1x10')?.classList.toggle('blue'); checkValue(); });
+            greenWrapper.addEventListener('click', e => { if (won) return; if (e.target.classList.contains('square')) { e.target.classList.toggle('green'); checkValue(); } });
+
+            function checkValue() {
+                const hundreds = redWrapper.querySelectorAll('.red').length;
+                const tens = blueWrapper.querySelectorAll('.blue').length;
+                const ones = greenWrapper.querySelectorAll('.green').length;
+                const value = (hundreds * 100) + (tens * 10) + ones;
+                if (value === 100) {
+                    won = true;
+                    celebrate();
+                    setTimeout(() => {
+                        gridScreen.classList.remove('active');
+                        winScreen.classList.add('active');
+                    }, 700);
+                }
+            }
+
+            function celebrate() {
+                const colors = ['#ffd700', '#e74c3c', '#ffffff', '#f1c40f'];
+                for (let i = 0; i < 80; i++) {
+                    const c = document.createElement('div');
+                    c.classList.add('confetti');
+                    c.style.left = Math.random() * 100 + 'vw';
+                    c.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                    c.style.animationDuration = (1.5 + Math.random() * 1.5) + 's';
+                    c.style.animationDelay = (Math.random() * 0.4) + 's';
+                    document.body.appendChild(c);
+                    setTimeout(() => c.remove(), 3500);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
