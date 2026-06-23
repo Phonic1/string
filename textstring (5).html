@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>textstring</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000000; touch-action: none; }
+    #container {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 20px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .letter {
+      position: absolute;
+      top: 0; left: 0;
+      will-change: transform;
+      font-family: 'Poppins', sans-serif;
+      font-size: 30px;
+      line-height: 1;
+      color: #ffe000;
+      pointer-events: none;
+    }
+    .letter.draggable {
+      pointer-events: auto;
+      cursor: grab;
+      z-index: 10;
+      touch-action: none;
+    }
+    .letter.dragging {
+      cursor: grabbing;
+    }
+    #hint {
+      position: absolute;
+      top: 0; left: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.8s;
+      font-family: 'Poppins', sans-serif;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: #8a7e00;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    #reveal {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 100%;
+      text-align: center;
+      font-family: 'Poppins', sans-serif;
+      font-weight: 700;
+      color: #ffe000;
+      line-height: 1;
+      pointer-events: none;
+      z-index: 100;
+      opacity: 0;
+      /* transform set by JS; transition drives the drop + grow */
+      will-change: transform, opacity;
+    }
+    #clueBtn {
+      position: fixed;
+      left: 50%;
+      bottom: 12%;
+      transform: translateX(-50%);
+      z-index: 200;
+      font-family: 'Poppins', sans-serif;
+      font-weight: 700;
+      font-size: 22px;
+      color: #000000;
+      background: #ffe000;
+      border: none;
+      border-radius: 999px;
+      padding: 16px 36px;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s, transform 0.15s;
+      box-shadow: 0 6px 24px rgba(255, 224, 0, 0.3);
+    }
+    #clueBtn.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    #clueBtn:active {
+      transform: translateX(-50%) scale(0.96);
+    }
+    #clueMsg {
+      position: fixed;
+      left: 50%;
+      top: 8%;
+      transform: translate(-50%, -20px);
+      z-index: 200;
+      width: 90%;
+      max-width: 720px;
+      text-align: center;
+      font-family: 'Poppins', sans-serif;
+      font-weight: 700;
+      font-size: 28px;
+      line-height: 1.3;
+      color: #c026ff;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.6s, transform 0.6s;
+    }
+    #clueMsg.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  </style>
+
+</head>
+<body>
+  <div id="container"></div>
+
+  <script>
+    // --- Inlined replacement for pretext.js ---
+    // Original used prepareWithSegments(text, font) -> prepared, then
+    // layoutWithLines(prepared, maxWidth, lineHeight) -> { lines: [{ text }] }.
+    // Only lines[].text is consumed (to build the zig-zag mapping), so we
+    // reproduce just the word-wrap that yields the same per-line text.
+    const _seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+    function prepareWithSegments(text, font) {
+      const ctx = document.createElement('canvas').getContext('2d');
+      ctx.font = font;
+      const graphemes = [..._seg.segment(text)].map(s => s.segment);
+      const widths = graphemes.map(g => ctx.measureText(g).width);
+      return { text, graphemes, widths };
+    }
+
+    function layoutWithLines(prepared, maxWidth, lineHeight) {
+      const { graphemes, widths } = prepared;
+      const MARGIN = 20;
+      const usable = maxWidth;
+      const lines = [];
+      let cur = '';
+      let x = 0;
+      for (let gi = 0; gi < graphemes.length; gi++) {
+        const g = graphemes[gi];
+        const w = widths[gi];
+        if (g === ' ' && x > 0) {
+          let wordW = 0;
+          for (let j = gi + 1; j < graphemes.length && graphemes[j] !== ' '; j++) {
+            wordW += widths[j];
+          }
+          if (x + w + wordW > usable) {
+            // Match layoutPositions: the breaking space belongs to the ending line
+            lines.push({ text: cur + g });
+            cur = '';
+            x = 0;
+            continue;
+          }
+        }
+        cur += g;
+        x += w;
+      }
+      if (cur.length) lines.push({ text: cur });
+      return { lines };
+    }
+    // --- end inlined pretext.js ---
+
+    const TEXT = "I am a little string. I wiggle and wind. I go up. I go down. I hide a clue you need to find. Hold me tight and do not let go. Pull the lines down low. Pull the lines to find your answer.";
+    const FONT = '30px Poppins';
+    const LINE_HEIGHT = 42;
+    const CONSTRAINT_DIST = 1.2;
+    const UNLOCK_THRESHOLD = 1;
+    const ITERATIONS = 12;
+    const DAMPING = 0.97;
+    const GRAVITY = 0.15;
+    let gravityOn = true;
+    let unraveling = false;
+    let unravelIdx = -1;
+
+    // Poppins is loaded from a CDN; canvas measureText would use a fallback font
+    // until it arrives, giving wrong glyph widths and a broken string geometry.
+    // Gate all measurement-dependent setup behind the font being ready.
+    function init() {
+    const container = document.getElementById('container');
+    const measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = FONT;
+
+    // Prepare text once with pretext
+    const prepared = prepareWithSegments(TEXT, FONT);
+    const MARGIN = 20;
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+    function getMaxWidth() {
+      return container.getBoundingClientRect().width - MARGIN * 2;
+    }
+
+    // Measure all graphemes once — these never change
+    const allGraphemes = [...segmenter.segment(TEXT)].map(s => s.segment);
+    const graphemeWidths = allGraphemes.map(g => measureCtx.measureText(g).width);
+
+    // Get reading-order positions for each grapheme at a given width.
+    function layoutPositions(maxWidth) {
+      const rawPositions = [];
+      let x = 0;
+      let lineY = 0;
+
+      for (let gi = 0; gi < allGraphemes.length; gi++) {
+        const g = allGraphemes[gi];
+        const w = graphemeWidths[gi];
+
+        if (g === ' ' && x > 0) {
+          let wordW = 0;
+          for (let j = gi + 1; j < allGraphemes.length && allGraphemes[j] !== ' '; j++) {
+            wordW += graphemeWidths[j];
+          }
+          if (x + w + wordW > maxWidth) {
+            rawPositions.push({ x: x + MARGIN, y: lineY, w });
+            x = 0;
+            lineY += LINE_HEIGHT;
+            continue;
+          }
+        }
+
+        rawPositions.push({ x: x + MARGIN, y: lineY, w });
+        x += w;
+      }
+
+      const totalHeight = lineY + LINE_HEIGHT;
+      const containerRect = container.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const offsetY = Math.max(0, (viewportHeight - containerRect.top - totalHeight) * 0.3);
+
+      return rawPositions.map(p => ({ x: p.x, y: p.y + offsetY, w: p.w }));
+    }
+
+    let positions = layoutPositions(getMaxWidth());
+
+    function buildZigzagMapping(maxWidth) {
+      const { lines } = layoutWithLines(prepared, maxWidth, LINE_HEIGHT);
+
+      const lineIndices = [];
+      let gi = 0;
+      for (let li = 0; li < lines.length; li++) {
+        const lineGraphemes = [...segmenter.segment(lines[li].text)].map(s => s.segment);
+        const indices = [];
+        for (let j = 0; j < lineGraphemes.length; j++) {
+          indices.push(gi++);
+        }
+        lineIndices.push(indices);
+      }
+
+      const lastLineIdx = lineIndices.length - 1;
+      const needFlip = lastLineIdx % 2 === 1;
+      const stringOrder = [];
+      for (let li = 0; li < lineIndices.length; li++) {
+        const reversed = needFlip ? (li % 2 === 0) : (li % 2 === 1);
+        if (reversed) {
+          stringOrder.push(...[...lineIndices[li]].reverse());
+        } else {
+          stringOrder.push(...lineIndices[li]);
+        }
+      }
+
+      return stringOrder;
+    }
+
+    const stringOrder = buildZigzagMapping(getMaxWidth());
+
+    const letters = stringOrder.map(ri => {
+      const p = positions[ri];
+      return {
+        ch: allGraphemes[ri],
+        w: p.w,
+        x: p.x, y: p.y,
+        ox: p.x, oy: p.y,
+        px: p.x, py: p.y,
+        readingIdx: ri,
+        locked: true
+      };
+    });
+
+    function computeRestLengths() {
+      const rests = [];
+      for (let i = 0; i < letters.length - 1; i++) {
+        const a = letters[i], b = letters[i + 1];
+        const dist = Math.hypot(
+          (b.ox + b.w / 2) - (a.ox + a.w / 2),
+          (b.oy + LINE_HEIGHT / 2) - (a.oy + LINE_HEIGHT / 2)
+        );
+        rests.push(dist * CONSTRAINT_DIST);
+      }
+      return rests;
+    }
+
+    let restLengths = computeRestLengths();
+
+    const els = [];
+    for (const l of letters) {
+      const span = document.createElement('span');
+      span.className = 'letter';
+      span.textContent = l.ch;
+      container.appendChild(span);
+      els.push(span);
+    }
+
+    const lastIdx = letters.length - 1;
+    // Every letter is grabbable from the start, but all stay locked (the poem holds
+    // its shape) until the user pulls one — pulling unravels its neighbours.
+    for (let i = 0; i <= lastIdx; i++) {
+      els[i].classList.add('draggable');
+    }
+
+    // "DRAG ME" hint — text label
+    const hint = document.createElement('div');
+    hint.id = 'hint';
+    hint.textContent = 'drag me';
+    container.appendChild(hint);
+    function positionHint() {
+      const last = letters[lastIdx];
+      hint.style.transform = `translate(${last.ox - 4}px, ${last.oy + LINE_HEIGHT + 4}px)`;
+    }
+    positionHint();
+    setTimeout(() => { hint.style.opacity = '1'; }, 500);
+
+    // "1963" reveal — drops from above the top edge down to screen centre, growing to fill.
+    // Not attached to the string; triggered once when the whole string is dragged out
+    // (i.e. the anchored first bead letters[0] becomes unlocked).
+    const reveal = document.createElement('div');
+    reveal.id = 'reveal';
+    reveal.textContent = '1963';
+    document.body.appendChild(reveal);
+
+    // Clue button (shown 1.5s after 1963 appears) and the message it reveals.
+    const clueBtn = document.createElement('button');
+    clueBtn.id = 'clueBtn';
+    clueBtn.textContent = 'Next clue \u2192';
+    document.body.appendChild(clueBtn);
+
+    const clueMsg = document.createElement('div');
+    clueMsg.id = 'clueMsg';
+    clueMsg.textContent = 'Head to the new gym and find a blue shield on the wall';
+    document.body.appendChild(clueMsg);
+
+    clueBtn.addEventListener('click', () => {
+      clueBtn.classList.remove('show');
+      clueBtn.style.pointerEvents = 'none';
+      clueMsg.classList.add('show');
+    });
+
+    let revealFired = false;
+    function fireReveal() {
+      if (revealFired) return;
+      revealFired = true;
+      hint.style.opacity = '0';
+
+      // Size "1963" to roughly fill the viewport width.
+      const targetFontPx = Math.min(window.innerHeight * 0.7, window.innerWidth / 2.4);
+      reveal.style.fontSize = targetFontPx + 'px';
+
+      // Start: positioned above the top edge, centred horizontally, invisible.
+      reveal.style.transition = 'none';
+      reveal.style.transform = `translateY(${-window.innerHeight}px)`;
+      reveal.style.opacity = '1';
+      // Force reflow so the starting transform is committed before we animate.
+      void reveal.offsetWidth;
+
+      // Drop to vertical centre.
+      const centreY = (window.innerHeight - reveal.offsetHeight) / 2;
+      reveal.style.transition = 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)';
+      reveal.style.transform = `translateY(${centreY}px)`;
+
+      // 1.5s after 1963 appears, fade in the clue button.
+      setTimeout(() => { clueBtn.classList.add('show'); }, 1500);
+    }
+
+
+    window.addEventListener('resize', () => {
+      const newPositions = layoutPositions(getMaxWidth());
+      for (let i = 0; i < letters.length; i++) {
+        const np = newPositions[letters[i].readingIdx];
+        if (letters[i].locked) {
+          letters[i].x = np.x;
+          letters[i].y = np.y;
+          letters[i].ox = np.x;
+          letters[i].oy = np.y;
+          letters[i].px = np.x;
+          letters[i].py = np.y;
+        } else {
+          letters[i].ox = np.x;
+          letters[i].oy = np.y;
+        }
+      }
+      positionHint();
+    });
+
+    const drags = new Map();
+
+    function isDragged(idx) {
+      for (const d of drags.values()) if (d.idx === idx) return true;
+      return false;
+    }
+
+    container.addEventListener('pointerdown', (e) => {
+      const idx = els.indexOf(e.target);
+      if (idx === -1) return;
+      if (isDragged(idx)) return;
+      const rect = container.getBoundingClientRect();
+      drags.set(e.pointerId, {
+        idx,
+        offsetX: e.clientX - rect.left - letters[idx].x,
+        offsetY: e.clientY - rect.top - letters[idx].y
+      });
+      els[idx].classList.add('dragging');
+      e.target.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      const d = drags.get(e.pointerId);
+      if (!d) return;
+      const rect = container.getBoundingClientRect();
+      const l = letters[d.idx];
+      l.x = e.clientX - rect.left - d.offsetX;
+      l.y = e.clientY - rect.top - d.offsetY;
+      l.px = l.x;
+      l.py = l.y;
+      l.locked = false;
+    });
+
+    window.addEventListener('pointerup', (e) => {
+      const d = drags.get(e.pointerId);
+      if (!d) return;
+      els[d.idx].classList.remove('dragging');
+      drags.delete(e.pointerId);
+    });
+
+    window.addEventListener('pointercancel', (e) => {
+      const d = drags.get(e.pointerId);
+      if (!d) return;
+      els[d.idx].classList.remove('dragging');
+      drags.delete(e.pointerId);
+    });
+
+    function simulate() {
+      if (unraveling) {
+        if (!gravityOn || unravelIdx < 0) { unraveling = false; }
+        else if (letters[unravelIdx].locked) {
+          letters[unravelIdx].locked = false;
+          letters[unravelIdx].px = letters[unravelIdx].x;
+          letters[unravelIdx].py = letters[unravelIdx].y - 0.5;
+          unravelIdx--;
+        } else {
+          unravelIdx--;
+        }
+      }
+
+      for (let i = letters.length - 2; i >= 0; i--) {
+        if (letters[i].locked && !letters[i + 1].locked) {
+          const a = letters[i], b = letters[i + 1];
+          const dx = (b.x + b.w / 2) - (a.ox + a.w / 2);
+          const dy = (b.y + LINE_HEIGHT / 2) - (a.oy + LINE_HEIGHT / 2);
+          const dist = Math.hypot(dx, dy);
+          if (dist > restLengths[i] + UNLOCK_THRESHOLD) {
+            a.locked = false;
+            a.px = a.x;
+            a.py = a.y;
+            hint.style.opacity = '0';
+          }
+        }
+      }
+
+      // Whole string dragged out: the anchored first bead has released.
+      if (!letters[0].locked) fireReveal();
+
+      for (let i = 0; i < letters.length; i++) {
+        const l = letters[i];
+        if (l.locked || isDragged(i)) continue;
+        const vx = (l.x - l.px) * DAMPING;
+        const vy = (l.y - l.py) * DAMPING;
+        l.px = l.x;
+        l.py = l.y;
+        l.x += vx;
+        l.y += vy + (gravityOn ? GRAVITY : 0);
+      }
+
+      for (let iter = 0; iter < ITERATIONS; iter++) {
+        for (let i = 0; i < letters.length - 1; i++) {
+          const a = letters[i], b = letters[i + 1];
+          if (a.locked && b.locked) continue;
+          const ax = a.x + a.w / 2, ay = a.y + LINE_HEIGHT / 2;
+          const bx = b.x + b.w / 2, by = b.y + LINE_HEIGHT / 2;
+          const dx = bx - ax, dy = by - ay;
+          const dist = Math.hypot(dx, dy) || 0.001;
+          const diff = (dist - restLengths[i]) / dist;
+          const aFixed = a.locked || isDragged(i);
+          const bFixed = b.locked || isDragged(i + 1);
+          if (aFixed && !bFixed) {
+            b.x -= dx * diff; b.y -= dy * diff;
+          } else if (!aFixed && bFixed) {
+            a.x += dx * diff; a.y += dy * diff;
+          } else if (!aFixed && !bFixed) {
+            a.x += dx * diff * 0.5; a.y += dy * diff * 0.5;
+            b.x -= dx * diff * 0.5; b.y -= dy * diff * 0.5;
+          }
+        }
+      }
+
+      const RADIUS = 11;
+      for (let i = 0; i < letters.length; i++) {
+        if (letters[i].locked) continue;
+        const a = letters[i];
+        const acx = a.x + a.w / 2, acy = a.y + LINE_HEIGHT / 2;
+        for (let j = i + 1; j < letters.length; j++) {
+          if (letters[j].locked) continue;
+          if (Math.abs(i - j) === 1) continue;
+          const b = letters[j];
+          const bcx = b.x + b.w / 2, bcy = b.y + LINE_HEIGHT / 2;
+          const dx = bcx - acx, dy = bcy - acy;
+          const dist = Math.hypot(dx, dy) || 0.001;
+          const minDist = RADIUS * 2;
+          if (dist < minDist) {
+            const overlap = (minDist - dist) / dist * 0.5;
+            const aD = isDragged(i);
+            const bD = isDragged(j);
+            if (aD) { b.x += dx * overlap; b.y += dy * overlap; }
+            else if (bD) { a.x -= dx * overlap; a.y -= dy * overlap; }
+            else { a.x -= dx * overlap; a.y -= dy * overlap; b.x += dx * overlap; b.y += dy * overlap; }
+          }
+        }
+      }
+
+      const cRect = container.getBoundingClientRect();
+      const minX = -cRect.left;
+      const minY = -cRect.top;
+      const maxX = window.innerWidth - cRect.left;
+      const maxY = window.innerHeight - cRect.top;
+      const bounce = 0.4;
+      for (let i = 0; i < letters.length; i++) {
+        const l = letters[i];
+        if (l.locked || isDragged(i)) continue;
+        if (l.x < minX) { l.x = minX; l.px = l.x + (l.x - l.px) * bounce; }
+        if (l.x + l.w > maxX) { l.x = maxX - l.w; l.px = l.x + (l.x - l.px) * bounce; }
+        if (l.y < minY) { l.y = minY; l.py = l.y + (l.y - l.py) * bounce; }
+        if (l.y + LINE_HEIGHT > maxY) { l.y = maxY - LINE_HEIGHT; l.py = l.y + (l.y - l.py) * bounce; }
+      }
+    }
+
+    const FIXED_DT = 1 / 120;
+    const MAX_STEPS = 4;
+    let accumulator = 0;
+    let lastTime = -1;
+
+    function render(now) {
+      if (lastTime < 0) { lastTime = now; requestAnimationFrame(render); return; }
+      const dt = Math.min((now - lastTime) / 1000, MAX_STEPS * FIXED_DT);
+      lastTime = now;
+      accumulator += dt;
+
+      while (accumulator >= FIXED_DT) {
+        simulate();
+        accumulator -= FIXED_DT;
+      }
+
+      for (let i = 0; i < letters.length; i++) {
+        if (!letters[i].locked) els[i].classList.add('draggable');
+        els[i].style.transform = `translate(${letters[i].x}px, ${letters[i].y}px)`;
+      }
+      requestAnimationFrame(render);
+    }
+
+    requestAnimationFrame(render);
+
+    // 'f' toggles gravity / kicks off the unravel (registered here so it closes
+    // over the in-scope letters[] and hint).
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'f' || e.key === 'F') {
+        gravityOn = !gravityOn;
+        if (gravityOn && !unraveling) {
+          unraveling = true;
+          hint.style.opacity = '0';
+          unravelIdx = letters.length - 1;
+          while (unravelIdx >= 0 && !letters[unravelIdx].locked) unravelIdx--;
+        }
+      }
+    });
+    } // end init
+
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load('30px Poppins').then(init, init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
