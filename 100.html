@@ -81,6 +81,23 @@
         @keyframes fall {
             to { transform: translateY(105vh) rotate(720deg); opacity: 1; }
         }
+
+        .bubble {
+            position: fixed;
+            bottom: -120px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9), rgba(255,255,255,0.15) 60%, rgba(255,255,255,0.05));
+            border: 1px solid rgba(255,255,255,0.4);
+            pointer-events: none;
+            z-index: 100;
+            animation: rise linear forwards;
+        }
+        @keyframes rise {
+            0%   { transform: translateY(0) translateX(0); opacity: 0; }
+            10%  { opacity: 0.9; }
+            90%  { opacity: 0.9; }
+            100% { transform: translateY(-110vh) translateX(var(--drift)); opacity: 0; }
+        }
     </style>
 </head>
 <body>
@@ -144,8 +161,24 @@
                     setTimeout(() => {
                         gridScreen.classList.remove('active');
                         winScreen.classList.add('active');
+                        startBubbles();
                     }, 700);
                 }
+            }
+
+            function startBubbles() {
+                setInterval(() => {
+                    const b = document.createElement('div');
+                    b.classList.add('bubble');
+                    const size = 15 + Math.random() * 55;
+                    b.style.width = size + 'px';
+                    b.style.height = size + 'px';
+                    b.style.left = Math.random() * 100 + 'vw';
+                    b.style.setProperty('--drift', (Math.random() * 120 - 60) + 'px');
+                    b.style.animationDuration = (5 + Math.random() * 5) + 's';
+                    document.body.appendChild(b);
+                    setTimeout(() => b.remove(), 10000);
+                }, 250);
             }
 
             function celebrate() {
